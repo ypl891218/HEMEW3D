@@ -1,0 +1,5 @@
+data/lyp/*
+data/*.npy
+data/*.zip
+models/inputs/inputs3D_S32_Z32_T320_fmax5_train/*.h5
+models/inputs/inputs3D_S32_Z32_T320_fmax5_val/*.h5
