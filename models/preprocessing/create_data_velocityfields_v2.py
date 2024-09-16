@@ -33,7 +33,7 @@ Nval = options['Nval']
 Irun0 = options['Irun0']
 
 path_save = '../inputs/' # where to save the machine learning inputs we are creating
-path_u = '../../data/' # path to the original raw data
+path_u = '../../data/velocity/' # path to the original raw data
 folder_name = f'inputs3D_S{S_out}_Z{S_out}_T{Nt}_fmax{fmax}' # folder containing ML inputs
 
 
@@ -49,7 +49,7 @@ for i in range(Irun0, Irun0+Ntrain):
         with h5py.File(path_save + folder_name + f'_train/sample{i}.h5', 'a') as h:
             h.create_dataset(comp, data = u, dtype=np.float32)
 
-    if i%1000 == 0:
+    if i%100 == 0:
         print(f"done for files train {i}/{Irun0+Ntrain}")
 
         
@@ -65,5 +65,5 @@ for i in range(Irun0+Ntrain, Irun0+Ntrain+Nval):
         with h5py.File(path_save + folder_name + f'_val/sample{i}.h5', 'a') as h:
             h.create_dataset(comp, data = u, dtype=np.float32)
 
-    if i%1000 == 0:
+    if i%100 == 0:
         print(f"done for files val {i}/{Irun0+Ntrain+Nval}")
