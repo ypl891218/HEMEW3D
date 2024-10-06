@@ -3,6 +3,8 @@ module_path = os.path.abspath(os.path.join('../'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
+from mpi4py import MPI
+
 import numpy as np
 import timeit
 import torch
@@ -47,6 +49,7 @@ parser.add_argument('@loss_weights', type=float, nargs='+', default = [1.0, 0.0]
 parser.add_argument('@dir_data_train', type=str, nargs='+', default=['inputs3D_S32_Z32_T320_fmax5_train'], help="Name of folders with training data")
 parser.add_argument('@dir_data_val', type=str, nargs='+', default=['inputs3D_S32_Z32_T320_fmax5_val'], help="Name of folders with training data")
 parser.add_argument('@additional_name', type=str, default="", help="string to add to the configuration name for saved outputs")
+parser.add_argument('@master_hostname', type=str, default="localhost", help="hostname")
 options = parser.parse_args().__dict__
 
 
@@ -69,16 +72,20 @@ S_out = options['S_out']
 T_out = options['T_out']
 padding = options['padding']
 
-def ddp_setup(rank, world_size):
+# lyp
+master_hostname = options['master_hostname']
+
+def ddp_setup(rank, world_size, gpu_id, master_hostname):
     """
     Args:
         rank: Unique identifier of each process
         world_size: Total number of processes
     """
-    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_ADDR"] = master_hostname
     os.environ["MASTER_PORT"] = "12355"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank)
+    torch.cuda.set_device(gpu_id)
+
 
 class Trainer:
     def __init__(
@@ -86,37 +93,17 @@ class Trainer:
         model: torch.nn.Module,
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
+        rank: int,
         gpu_id: int,
         val_data: DataLoader
     ) -> None:
+        self.rank = rank
         self.gpu_id = gpu_id
         self.model = model.to(gpu_id)
         self.train_data = train_data
         self.optimizer = optimizer
         self.val_data = val_data
         self.model = DDP(model, device_ids=[gpu_id])
-
-    def _run_batch(self, source, targets):
-        self.optimizer.zero_grad()
-        output = self.model(source)
-        loss = F.cross_entropy(output, targets)
-        loss.backward()
-        self.optimizer.step()
-
-    def _run_epoch(self, epoch):
-        b_sz = len(next(iter(self.train_data))[0])
-        print(f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
-        self.train_data.sampler.set_epoch(epoch)
-        for source, targets in self.train_data:
-            source = source.to(self.gpu_id)
-            targets = targets.to(self.gpu_id)
-            self._run_batch(source, targets)
-
-    def _save_checkpoint(self, epoch):
-        ckp = self.model.module.state_dict()
-        PATH = "checkpoint.pt"
-        torch.save(ckp, PATH)
-        print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
     def train(self, name_config: str):
         # name_config = f"FFNO3D-dv{dv}-{self.nlayers}layers-S{S_in}-T{T_out}-padding{padding}-learningrate{str(learning_rate).replace('.','p')}-" \
@@ -201,7 +188,7 @@ class Trainer:
                     break
 
                 # save intermediate losses
-                if ep%2==0 and self.gpu_id == 0:
+                if ep%2==0 and self.rank == 0:
                     with h5py.File(f'./logs/loss/loss-{name_config}-epoch{ep}on{epochs}.h5', 'w') as f:
                         f.create_dataset('train_loss_relative', data=train_history['loss_relative'])
                         f.create_dataset('train_loss_absolute', data=train_history['loss_absolute'])
@@ -214,7 +201,7 @@ class Trainer:
 
                     last_epoch_saved = ep # to remove the last intermediate save at the end
     
-        if self.gpu_id == 0:
+        if self.rank == 0:
             # save the final loss
             with h5py.File(f'./logs/loss/loss-{name_config}-epochs{ep+1}.h5', 'w') as f:
                 f.create_dataset('train_loss_relative', data=train_history['loss_relative'])
@@ -267,21 +254,26 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
         sampler=DistributedSampler(dataset)
     )
 
-def main(rank: int, world_size: int, total_epochs: int, batch_size: int):
-    ddp_setup(rank, world_size)
+def main(rank: int, world_size: int, gpu_id: int, master_hostname: str, batch_size: int):
+    ddp_setup(rank, world_size, gpu_id, master_hostname)
     dataset, model, optimizer, valset, nameConfig = load_train_objs()
     train_data = prepare_dataloader(dataset, batch_size)
-    val_data =prepare_dataloader(valset, batch_size)
-    trainer = Trainer(model, train_data, optimizer, rank, val_data)
+    val_data = prepare_dataloader(valset, batch_size)
+    
+    trainer = Trainer(model, train_data, optimizer, rank, gpu_id, val_data)
     trainer.train(nameConfig)
     destroy_process_group()
 
 if __name__ == '__main__':
-    world_size = torch.cuda.device_count()
-
+    world_size = MPI.COMM_WORLD.Get_size()
+    world_rank = MPI.COMM_WORLD.Get_rank()
+    gpu_id = world_rank % torch.cuda.device_count()
+    print("World Rank: %s, World Size: %s, GPU_ID: %s"%(world_rank, world_size, gpu_id))
+    print("Master hostname: %s"%(master_hostname))
+    print("Starting process on " + MPI.Get_processor_name() + ":" +torch.cuda.get_device_name(gpu_id))
     # name_config = f"FFNO3D-dv{dv}-{options['nlayers']}layers-S{S_in}-T{T_out}-padding{padding}-learningrate{str(learning_rate).replace('.','p')}-" \
     #     f"L1loss{str(loss_weights[0]).replace('.','p')}-L2loss{str(loss_weights[1]).replace('.','p')}-"
     # name_config += f"Ntrain{Ntrain}-batchsize{batch_size}"
     # name_config += options['additional_name']
 
-    mp.spawn(main, args=(world_size, epochs, batch_size), nprocs=world_size)
+    main(world_rank, world_size, gpu_id, master_hostname, batch_size)
