@@ -1,0 +1,30 @@
+import argparse
+
+def get_parsed_options():
+    parser = argparse.ArgumentParser(prefix_chars='@')
+    parser.add_argument('@S_in', type=int, default=32, help="Size of the spatial input grid")
+    parser.add_argument('@S_in_z', type=int, default=32, help="Size of the spatial input grid")
+    parser.add_argument('@S_out', type=int, default=32, help="Size of the spatial output grid")
+    parser.add_argument('@T_out', type=int, default=320, help="Number of time steps")
+    parser.add_argument('@Ntrain', type=int, default=27000, help="Number of training samples")
+    parser.add_argument('@Nval', type=int, default=3000, help="Number of validation samples")
+    parser.add_argument('@batch_size', type=int, default=16, help = 'batch size')
+    parser.add_argument('@epochs', type=int, default=350, help = 'Number of epochs')
+    parser.add_argument('@dv', type=int, default=16, help = "Number of channels after the liting")
+    parser.add_argument('@list_D1', type=int, nargs='+', default = [32, 32, 32, 32], help = "Dimensions along the 1st dimension after each block")
+    parser.add_argument('@list_D2', type=int, nargs='+', default = [32, 32, 32, 32], help = "Dimensions along the 2nd dimension after each block")
+    parser.add_argument('@list_D3', type=int, nargs='+', default = [64, 128, 256, 320], help = "Dimensions along the 3rd dimension after each block")
+    parser.add_argument('@list_M1', type=int, nargs='+', default = [16, 16, 16, 16], help = "Number of modes along the 1st dimension after each block")
+    parser.add_argument('@list_M2', type=int, nargs='+', default = [16, 16, 16, 16], help = "Number of modes along the 2nd dimension after each block")
+    parser.add_argument('@list_M3', type=int, nargs='+', default = [16, 32, 32, 32], help = "Number of modes along the 3rd dimension after each block")
+    parser.add_argument('@nlayers', type=int, default=4, help="Number of layers")
+    parser.add_argument('@padding', type=int, default=0, help = "Number of pixels for padding on each side of x and y")
+    parser.add_argument('@learning_rate', type=float, default=0.0006, help='learning rate')
+    parser.add_argument('@loss_weights', type=float, nargs='+', default = [1.0, 0.0], help = "Weight of L1 loss, L2 loss")
+    parser.add_argument('@dir_data_train', type=str, nargs='+', default=['inputs3D_S32_Z32_T320_fmax5_train'], help="Name of folders with training data")
+    parser.add_argument('@dir_data_val', type=str, nargs='+', default=['inputs3D_S32_Z32_T320_fmax5_val'], help="Name of folders with training data")
+    parser.add_argument('@additional_name', type=str, default="", help="string to add to the configuration name for saved outputs")
+    # lyp added
+    parser.add_argument('@master_hostname', type=str, default="localhost", help="Master node's hostname")
+    parser.add_argument('@model_type', type=str, default="ffno3d", help="The type of model")
+    return parser.parse_args().__dict__
